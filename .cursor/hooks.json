@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": "python3 .cursor/hooks/stop_tests.py",
+        "failClosed": true,
+        "loop_limit": null
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "python3 .cursor/hooks/protect_characterisation.py",
+        "failClosed": true
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "python3 .cursor/hooks/protect_characterisation.py",
+        "failClosed": true
+      }
+    ]
+  }
+}
