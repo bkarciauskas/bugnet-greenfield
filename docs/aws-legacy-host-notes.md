@@ -142,3 +142,10 @@ The difference that matters: Azure had `az vm run-command`, which returned the s
 - Keep `sg-0b65de7cbc9379788`, EIP `15.135.1.105` (`eipalloc-0d31e6920ebaa5dd7`), the Secrets Manager secret, and the two S3 backups.
 
 Leave Azure up.
+
+## Cleanup done
+
+- Deleted S3 object `admin.pw`. Bucket `bugnet-dryrun-migrate-500766168271` still has `BugNET.bak` and `bugnet-site.zip` only.
+- `i-0a94bcf7d45f0d56c` is `terminated`. `vol-0212cdeee223eb037` is gone (`InvalidVolume.NotFound`). No `project=bugnet-dryrun` volumes remain. Volumes for `i-07b6b0b4da66e9227` and `i-066c6d53504ed9ce9` were already gone.
+- Kept `sg-0b65de7cbc9379788`, Elastic IP `15.135.1.105` (`eipalloc-0d31e6920ebaa5dd7`, now unassociated), secret `bugnet-dryrun/admin-password`, and the two S3 backups.
+- `az group show -n bugnet-dryrun` still returns the group. It was not deleted.
