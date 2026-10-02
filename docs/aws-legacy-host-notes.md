@@ -149,3 +149,23 @@ Leave Azure up.
 - `i-0a94bcf7d45f0d56c` is `terminated`. `vol-0212cdeee223eb037` is gone (`InvalidVolume.NotFound`). No `project=bugnet-dryrun` volumes remain. Volumes for `i-07b6b0b4da66e9227` and `i-066c6d53504ed9ce9` were already gone.
 - Kept `sg-0b65de7cbc9379788`, Elastic IP `15.135.1.105` (`eipalloc-0d31e6920ebaa5dd7`, now unassociated), secret `bugnet-dryrun/admin-password`, and the two S3 backups.
 - `az group show -n bugnet-dryrun` still returns the group. It was not deleted.
+
+## Mail capture on the rebuilt host
+
+Checked 2026-10-02 after the rebuild of `i-0a5a720ebfc186d69` (Elastic IP `15.135.1.105`). This section does not describe the stopped instance above. Azure was not touched. No BugNET issue was created. The admin password is not here.
+
+Live `C:\inetpub\bugnet\Web.config` mail section, read and left unchanged (SHA256 `8F288CD61C6EE36B7AB67E871B047D6C328EFF8CD36305E6CA95CC5CE167989A` before and after):
+
+```xml
+<mailSettings>
+  <smtp deliveryMethod="SpecifiedPickupDirectory">
+    <specifiedPickupDirectory pickupDirectoryLocation="C:\Email" />
+  </smtp>
+</mailSettings>
+```
+
+New-issue mail is written to `C:\Email` and does not go out over SMTP. `SmtpClient` keeps `SpecifiedPickupDirectory`, so host setting `SMTPServer=localhost` is not used. `HostEmailAddress` is the stock `noreply@mysmtpserver.com`. `SMTPPassword` and `Pop3Password` are empty. One membership row has an email address. `C:\Email` did not exist; without that directory the pickup send fails. The directory was created and `IIS APPPOOL\BugNET` was granted modify. That is not a mail-settings change.
+
+Scheduled task `bugnet-mail-capture` runs as `SYSTEM` every minute (`PT1M`). The action is `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\migrate\mail-upload.ps1`. The script uploads each new `*.eml` with one presigned PUT from `C:\migrate\mail-put-urls.txt` (100 keys, `mail/slot-0001.eml` through `mail/slot-0100.eml`, 7-day expiry). There are no long-lived AWS keys on the instance. The URL file is readable by `SYSTEM` and `Administrators` only. Logs and the marker `C:\migrate\markers\mailcapture.done` stay in `C:\migrate`, outside the site. The stage skips once the marker exists. User-data was not given a new secret; it still only downloads the bootstrap.
+
+Proof: the task uploaded `capture-canary.eml` (200 bytes) to `mail/slot-0001.eml` with HTTP 200. The local canary and the S3 object were then removed, and the task was still `PT1M` after a later reboot. The bucket again has only `BugNET.bak` and `bugnet-site.zip`. Homepage `http://15.135.1.105/` returned 200 after that reboot.
