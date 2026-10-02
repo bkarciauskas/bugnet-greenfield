@@ -1,6 +1,6 @@
 import unittest
 
-from web_create import host
+from web_create import assert_creator_vote, host
 
 
 class B16Test(unittest.TestCase):
@@ -10,5 +10,5 @@ class B16Test(unittest.TestCase):
             f"/Issues/IssueDetail.aspx?id={issue.issue_id}",
             issue.location,
         )
-        self.assertEqual("1", issue.vote_count)
+        assert_creator_vote(issue.detail_html)
         self.assertEqual(host().facts.display_name, issue.detail_creator)

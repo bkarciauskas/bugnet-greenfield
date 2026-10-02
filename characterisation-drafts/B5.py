@@ -1,6 +1,6 @@
 import unittest
 
-from web_create import host
+from web_create import host, subject_names_issue
 
 
 class B5Test(unittest.TestCase):
@@ -9,4 +9,4 @@ class B5Test(unittest.TestCase):
         messages = host().messages_about(issue)
         self.assertGreaterEqual(len(messages), 1)
         for message in messages:
-            self.assertIn(issue.full_id, message.subject)
+            subject_names_issue(message.subject, issue.full_id)

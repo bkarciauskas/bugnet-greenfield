@@ -1,6 +1,6 @@
 import unittest
 
-from web_create import host, message_recipients, qualifying_subscribers
+from web_create import host, message_recipients, qualifying_subscribers, subject_names_issue
 
 
 class B8Test(unittest.TestCase):
@@ -23,6 +23,6 @@ class B8Test(unittest.TestCase):
                     if address in message_recipients([message])
                 ]
                 self.assertEqual(1, len(addressed))
-                self.assertIn(issue.full_id, addressed[0].subject)
+                subject_names_issue(addressed[0].subject, issue.full_id)
         finally:
             admin.release_member(member)

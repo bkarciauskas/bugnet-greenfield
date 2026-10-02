@@ -40,10 +40,73 @@ ISSUE_ADDED_SUBJECT = {
     "zh-CN": "你关注的项目添加了一个新问题 {0}",
 }
 
-ADDED_TEMPLATE_MARK = "The following issue has been added to a project that you are monitoring."
-UPDATED_TEMPLATE_MARK = "The following issue has been updated by"
-HTML_TITLE_MARK = "<b>Title:</b>"
-TEXT_TITLE_MARK = "Title: "
+@dataclass(frozen=True)
+class AddIssueTemplate:
+    lead: str
+    updated_lead: str
+    labels: tuple
+
+
+_INVARIANT_LABELS = (
+    "Title",
+    "Project",
+    "Created By",
+    "Milestone",
+    "Category",
+    "Priority",
+    "Type",
+    "Description",
+)
+
+ADD_ISSUE_TEMPLATES = {
+    "": AddIssueTemplate(
+        "The following issue has been added to a project that you are monitoring.",
+        "The following issue has been updated by",
+        _INVARIANT_LABELS,
+    ),
+    "nl-NL": AddIssueTemplate(
+        "Het volgende punt is toegevoegd aan een project dat u volgt.",
+        "Het volgende punt is bijgewerkt door",
+        (
+            "Titel",
+            "Project",
+            "Aangemaakt door",
+            "Mijlpaal",
+            "Categorie",
+            "Prioriteit",
+            "Type",
+            "Omschrijving",
+        ),
+    ),
+    "ru-RU": AddIssueTemplate(
+        "В проект добавлено новое задание.",
+        "Следующее задание было обновлено пользователем",
+        (
+            "Заголовок",
+            "Проект",
+            "Создатель",
+            "Этап",
+            "Категория",
+            "Приоритет",
+            "Тип",
+            "Описание",
+        ),
+    ),
+    "ro-RO": AddIssueTemplate(
+        "Urmatoarea problema a fost adaugata la proiectul pe care-l monitorizati.",
+        "Urmatoarea problema a fost actualizata de",
+        (
+            "Titlu",
+            "Proiect",
+            "Creat De",
+            "Reper",
+            "Categorie",
+            "Prioritate",
+            "Tip",
+            "Descriere",
+        ),
+    ),
+}
 _SECRETS = []
 
 
@@ -226,6 +289,27 @@ def issue_added_subject(culture):
     return ISSUE_ADDED_SUBJECT[name]
 
 
+def add_issue_template(culture):
+    name = (culture or "").strip()
+    if name in ("", "en-US", "en"):
+        return ADD_ISSUE_TEMPLATES[""]
+    return ADD_ISSUE_TEMPLATES.get(name, ADD_ISSUE_TEMPLATES[""])
+
+
+def subject_names_issue(subject, full_id):
+    pattern = r"(?<![A-Za-z0-9])" + re.escape(full_id) + r"(?![A-Za-z0-9])"
+    if re.search(pattern, subject or "") is None:
+        raise AssertionError("subject does not name " + full_id)
+
+
+def message_culture(message, people, default_language):
+    _name, address = email.utils.parseaddr(message.to)
+    for person in people:
+        if person.email.lower() == address.lower():
+            return render_culture(person.preferred_locale, default_language)
+    raise AssertionError("no subscriber for recipient " + address)
+
+
 def message_recipients(messages):
     found = set()
     for message in messages:
@@ -245,20 +329,88 @@ def qualifying_subscribers(people, project_id):
     ]
 
 
-def assert_add_issue_template(body, email_format):
-    if ADDED_TEMPLATE_MARK not in body:
-        raise AssertionError("decoded body is not the add-issue template")
-    if UPDATED_TEMPLATE_MARK in body:
+def assert_add_issue_template(body, email_format, culture):
+    template = add_issue_template(culture)
+    title = template.labels[0]
+    html_mark = "<b>" + title + ":</b>"
+    text_mark = title + ": "
+    if template.lead not in body:
+        raise AssertionError("decoded body is not the add-issue template for " + (culture or "invariant"))
+    if template.updated_lead in body:
         raise AssertionError("decoded body is the issue-updated template")
     if email_format == "2":
-        if HTML_TITLE_MARK not in body or TEXT_TITLE_MARK in body:
+        if html_mark not in body or text_mark in body:
             raise AssertionError("decoded body is not the HTML add-issue template")
         return
     if email_format == "1":
-        if HTML_TITLE_MARK in body or TEXT_TITLE_MARK not in body:
+        if html_mark in body or text_mark not in body:
             raise AssertionError("decoded body is not the text add-issue template")
         return
     raise AssertionError("unread mail format setting")
+
+
+def template_fields(body, culture, email_format):
+    template = add_issue_template(culture)
+    if email_format == "2":
+        return _html_template_fields(body, template.labels)
+    if email_format == "1":
+        return _text_template_fields(body, template.labels)
+    raise AssertionError("unread mail format setting")
+
+
+def _field_value(raw):
+    return html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", raw)).strip())
+
+
+def _html_template_fields(body, labels):
+    fields = {}
+    description = labels[-1]
+    for label in labels:
+        if label == description:
+            continue
+        match = re.search(
+            r"<b>\s*" + re.escape(label) + r"\s*:\s*</b>\s*</td>\s*<td[^>]*>(.*?)</td>",
+            body,
+            re.S,
+        )
+        if match:
+            fields[label] = _field_value(match.group(1))
+    match = re.search(
+        r"<b>\s*" + re.escape(description) + r"\s*:\s*</b>.*?<td\b[^>]*>(.*?)</td>",
+        body,
+        re.S,
+    )
+    if match:
+        fields[description] = _field_value(match.group(1))
+    return fields
+
+
+def _text_template_fields(body, labels):
+    wanted = set(labels)
+    fields = {}
+    for line in body.splitlines():
+        if ": " not in line:
+            continue
+        label, value = line.split(": ", 1)
+        label = label.strip()
+        if label in wanted and label not in fields:
+            fields[label] = value.strip()
+    return fields
+
+
+def viewer_has_voted(page):
+    button = re.search(r'id="[^"]*VoteButton"', page or "")
+    label = re.search(r'id="[^"]*VotedLabel"[^>]*>(.*?)</span>', page or "", re.S)
+    voted = _field_value(label.group(1)) if label else ""
+    return button is None and voted != ""
+
+
+def assert_creator_vote(page):
+    total = _vote_total(page)
+    if total != "1":
+        raise AssertionError("stored vote total is " + total)
+    if not viewer_has_voted(page):
+        raise AssertionError("stored vote is not the signed-in creator's")
 
 
 @dataclass

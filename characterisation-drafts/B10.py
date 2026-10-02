@@ -1,13 +1,15 @@
 import unittest
 
-from web_create import assert_add_issue_template, host
+from web_create import assert_add_issue_template, host, message_culture
 
 
 class B10Test(unittest.TestCase):
     def test_B10(self):
         issue = host().create("B10")
+        facts = host().facts
         message = host().messages_about(issue)[0]
-        assert_add_issue_template(message.body, host().facts.email_format)
+        culture = message_culture(message, host().people(), facts.default_language)
+        assert_add_issue_template(message.body, facts.email_format, culture)
         self.assert_in_order(
             message.body,
             [

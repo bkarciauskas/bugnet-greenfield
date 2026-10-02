@@ -15,9 +15,20 @@ Citations:
 - `src/BugNET.BLL/IssueNotificationManager.cs`, `SendIssueAddNotifications`, constructs `SmtpMailDeliveryService` and calls `Send`
 - `src/BugNET.BLL/Notifications/SmtpMailDeliveryService.cs`, `Send`, `await Task.Run` around `client.SendAsync`
 
+## B2. An empty preferred locale stays on the web.config culture
+
+`DateCreated` uses the current culture's general short pattern. For an authenticated user, `LocalizationModule.context_PreRequestHandlerExecute` applies `PreferredLocale` only when that value is non-empty. When `PreferredLocale` is empty, the module does not set the thread culture. The detail page stays on the `web.config` globalization culture `en-US`. It does not switch to host setting `ApplicationDefaultLanguage`.
+
+`B2.py` still calls `render_culture`. That helper uses the preferred locale when it is non-empty, and otherwise the host default language. The profile default is `en-US`, so the usual path matches the page. A blank preferred locale with a non-English host default language is the path this note records. The test does not cover that path.
+
+Citations:
+
+- `src/BugNET_WAP/Web.config`, `globalization culture="en-US"`
+- `src/Library/HttpModules/Localization/LocalizationModule.cs`, `context_PreRequestHandlerExecute`
+
 ## B16. Vote order is not observable on the host
 
-A successful create stores one vote by the creator. The detail page reached by the redirect renders that stored total in the vote count. The test reads that number.
+A successful create stores one vote by the creator. The detail page reached by the redirect renders the stored total in the vote count. The same page shows that the signed-in user has voted by hiding `VoteButton` and rendering `VotedLabel`. The test reads both. The signed-in user is the creator, and the total is 1, so that vote is the creator's.
 
 The clause "before the notification and the redirect" is not observable from the HTTP exchange. The 302 is the response, and both the vote write and the notification queue happen before that response is sent. The client cannot see which of those two finished first.
 
