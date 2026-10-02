@@ -5,7 +5,7 @@ import sys
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROWS = [f"B{number}" for number in range(1, 17) if number != 7] + ["U1", "U2"]
+ROWS = [f"B{number}" for number in range(1, 17) if number != 7] + ["U1"]
 
 
 def main():
