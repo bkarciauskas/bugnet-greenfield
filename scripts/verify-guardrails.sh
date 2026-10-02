@@ -18,6 +18,7 @@ required=(
   .github/workflows/guardrails.yml
   .cursor/skills/verify-guardrails/SKILL.md
   characterisation-tests/README.md
+  characterisation-drafts/README.md
 )
 
 missing=0
@@ -98,6 +99,12 @@ expect ".cursor/hooks/stop_tests.py" 2 "FAIL CLOSED: test command could not run"
   python3 .cursor/hooks/stop_tests.py --command definitely-missing-guardrail-test-bin
 expect ".cursor/hooks/protect_characterisation.py" 2 "Blocked edit to characterisation-tests/" \
   '{"hook_event_name":"preToolUse","tool_name":"Write","tool_input":{"path":"characterisation-tests/README.md"}}' \
+  python3 .cursor/hooks/protect_characterisation.py
+expect ".cursor/hooks/protect_characterisation.py" 2 "Blocked edit to characterisation-tests/ (characterisation-tests/CreateIssueTests.cs)" \
+  '{"hook_event_name":"preToolUse","tool_name":"Write","tool_input":{"path":"characterisation-tests/CreateIssueTests.cs","contents":"new test"}}' \
+  python3 .cursor/hooks/protect_characterisation.py
+expect ".cursor/hooks/protect_characterisation.py" 0 '"permission": "allow"' \
+  '{"hook_event_name":"preToolUse","tool_name":"Write","tool_input":{"path":"characterisation-drafts/CreateIssueTests.cs","contents":"draft"}}' \
   python3 .cursor/hooks/protect_characterisation.py
 expect ".cursor/hooks/protect_characterisation.py" 2 "Blocked shell command that would modify characterisation-tests/" \
   '{"hook_event_name":"beforeShellExecution","command":"echo agent >> characterisation-tests/README.md"}' \

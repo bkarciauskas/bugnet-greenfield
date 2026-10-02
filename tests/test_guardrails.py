@@ -223,6 +223,73 @@ class GuardrailTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, DENY_PATH + "\n")
 
+    def test_edit_denies_new_file_in_protected_tree(self) -> None:
+        payload = json.dumps(
+            {
+                "hook_event_name": "preToolUse",
+                "tool_name": "Write",
+                "tool_input": {
+                    "path": "characterisation-tests/CreateIssueTests.cs",
+                    "contents": "new test",
+                },
+            }
+        )
+        result = run([str(PROTECT)], payload)
+        self.assertEqual(result.returncode, 2)
+        message = json.loads(result.stdout)["user_message"]
+        self.assertIn("characterisation-tests/CreateIssueTests.cs", message)
+        self.assertTrue(message.startswith("Blocked edit to characterisation-tests/"))
+        shell = run(
+            [str(PROTECT)],
+            json.dumps(
+                {
+                    "hook_event_name": "beforeShellExecution",
+                    "command": "touch characterisation-tests/CreateIssueTests.cs",
+                    "cwd": str(ROOT),
+                }
+            ),
+        )
+        self.assertEqual(shell.returncode, 2)
+        self.assertEqual(json.loads(shell.stdout)["user_message"], SHELL_MESSAGE)
+
+    def test_edit_and_shell_allow_draft_writes(self) -> None:
+        write = run(
+            [str(PROTECT)],
+            json.dumps(
+                {
+                    "hook_event_name": "preToolUse",
+                    "tool_name": "Write",
+                    "tool_input": {
+                        "path": "characterisation-drafts/CreateIssueTests.cs",
+                        "contents": "draft",
+                    },
+                }
+            ),
+        )
+        self.assertEqual(write.returncode, 0)
+        self.assertEqual(json.loads(write.stdout), {"permission": "allow"})
+        shell = run(
+            [str(PROTECT)],
+            json.dumps(
+                {
+                    "hook_event_name": "beforeShellExecution",
+                    "command": "echo draft >> characterisation-drafts/CreateIssueTests.cs",
+                    "cwd": str(ROOT),
+                }
+            ),
+        )
+        self.assertEqual(shell.returncode, 0)
+        self.assertEqual(json.loads(shell.stdout), {"permission": "allow"})
+
+    def test_fixture_new_file_denied_and_draft_diff_allowed(self) -> None:
+        new_file = run([str(CHECKER), str(ROOT / "scripts/fixtures/characterisation-new-file.diff")])
+        self.assertEqual(new_file.returncode, 1)
+        self.assertIn("characterisation-tests/CreateIssueTests.cs", new_file.stdout)
+        self.assertTrue(new_file.stdout.startswith("DENY:"))
+        draft = run([str(CHECKER), str(ROOT / "scripts/fixtures/characterisation-draft.diff")])
+        self.assertEqual(draft.returncode, 0)
+        self.assertEqual(draft.stdout, "ALLOW: characterisation-tests/ is unchanged.\n")
+
     def test_fixture_diff_allowed_for_approver(self) -> None:
         result = run([str(CHECKER), str(FIXTURE), "--override-actor", "bkarciauskas"])
         self.assertEqual(result.returncode, 0)
