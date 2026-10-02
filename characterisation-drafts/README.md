@@ -2,7 +2,7 @@
 
 Write new characterisation tests in this folder. It is not locked. `characterisation-tests/` is locked: the hook denies creating a new file there, and it denies editing a file that is already there.
 
-1. Write the test under `characterisation-drafts/` and run it against the legacy BugNET host until it passes.
+1. Write the test under `characterisation-drafts/` and run it against http://15.135.1.105/ until it passes. The WSDL is http://15.135.1.105/Webservices/BugNetServices.asmx?WSDL. Start the instance with `aws ec2 start-instances --instance-ids i-0a5a720ebfc186d69 --region ap-southeast-2`. The Admin password is in Secrets Manager `bugnet-dryrun/admin-password`. See `docs/legacy-host.md`. // pragma: allowlist secret
 2. Ben reviews the draft.
 3. A pull request moves the files into `characterisation-tests/`. GitHub user `bkarciauskas` applies the label `allow-characterisation-edit`. An agent cannot apply that label itself.
 
