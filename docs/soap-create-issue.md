@@ -1,6 +1,6 @@
 # Creating an issue and its notification email
 
-`Webservices/BugNetServices.asmx` does not create an issue, and it does not send the new-issue email. The live WSDL on the dry-run host matches the source. The operation list is `ValidIssue`, `CreateNewIssueRevision`, `CreateNewIssueAttachment`, `RenameCategory`, `MoveCategory`, `GetCategories`, `AddCategory`, `DeleteCategory`, `GetResolutions`, `GetMilestones`, `GetIssueTypes`, `GetPriorities`, `GetStatus`, `GetProjectId`, `GetProjectIssues`, `LogIn`, and `LogOut`.
+`Webservices/BugNetServices.asmx` does not create an issue, and it does not send the new-issue email. The live WSDL at http://15.135.1.105/Webservices/BugNetServices.asmx?WSDL matches the source. The host is http://15.135.1.105/. See [legacy-host.md](legacy-host.md). The operation list is `ValidIssue`, `CreateNewIssueRevision`, `CreateNewIssueAttachment`, `RenameCategory`, `MoveCategory`, `GetCategories`, `AddCategory`, `DeleteCategory`, `GetResolutions`, `GetMilestones`, `GetIssueTypes`, `GetPriorities`, `GetStatus`, `GetProjectId`, `GetProjectIssues`, `LogIn`, and `LogOut`.
 
 A new issue is created by the WebForms page `Issues/CreateIssue.aspx`. `SaveIssue` inserts the row through `IssueManager.SaveOrUpdate`, which sends no mail on insert, and then calls `IssueNotificationManager.SendIssueAddNotifications`. The POP3 mailbox reader is the only other caller of that email method. In this checkout the reader is not registered, so a normal web create is the path that actually sends the mail.
 
