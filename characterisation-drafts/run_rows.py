@@ -16,12 +16,23 @@ def main():
         suite.addTests(loader.loadTestsFromModule(importlib.import_module(row)))
     stream = io.StringIO()
     result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
-    failed = set()
-    for test, _trace in list(result.failures) + list(result.errors):
-        failed.add(test.id().split(".")[-1].replace("test_", ""))
+    failed = {}
+    for test, trace in list(result.failures) + list(result.errors):
+        failed[test.id().split(".")[-1].replace("test_", "")] = trace
+    skipped = {}
+    for test, reason in result.skipped:
+        skipped[test.id().split(".")[-1].replace("test_", "")] = reason
     for row in ROWS:
-        print(f"{row} {'FAIL' if row in failed else 'PASS'}")
-    print(f"{result.testsRun - len(failed)} passed, {len(failed)} failed, {result.testsRun} ran")
+        if row in failed:
+            print(f"{row} FAIL")
+        elif row in skipped:
+            print(f"{row} UNTESTABLE {skipped[row]}")
+        else:
+            print(f"{row} PASS")
+    passed = len(ROWS) - len(failed) - len(skipped)
+    print(
+        f"{passed} passed, {len(failed)} failed, {len(skipped)} untestable, {result.testsRun} ran"
+    )
     print("---")
     print(stream.getvalue())
     return 1 if failed else 0

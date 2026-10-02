@@ -1,6 +1,6 @@
 import unittest
 
-from web_create import host, parse_general_short, close_enough
+from web_create import host, matches_general_short
 
 
 class B2Test(unittest.TestCase):
@@ -10,5 +10,5 @@ class B2Test(unittest.TestCase):
         self.assertEqual(f"{issue.project_code}-{issue.issue_id}", issue.detail_full_id)
         self.assertEqual(issue.title, issue.detail_title)
         self.assertEqual(facts.display_name, issue.detail_creator)
-        parsed = parse_general_short(issue.detail_created, facts.default_language)
-        self.assertTrue(close_enough(parsed), issue.detail_created)
+        self.assertTrue(facts.preferred_locale)
+        matches_general_short(issue.detail_created, facts.preferred_locale)

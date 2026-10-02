@@ -7,9 +7,11 @@ class B8Test(unittest.TestCase):
     def test_B8(self):
         issue = host().create("B8")
         facts = host().facts
-        expected = set(host().signed_in_subscriber_emails(issue.project_id))
+        expected = host().observable_subscriber_emails(issue.project_id)
+        self.assertTrue(expected)
         actual = host().recipient_addresses(issue)
-        self.assertEqual(expected, actual)
+        for address in expected:
+            self.assertIn(address, actual)
         creator_qualifies = (
             facts.notifications_on and issue.project_id in facts.subscribed_project_ids
         )

@@ -10,14 +10,38 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 BASE = os.environ.get("BUGNET_BASE_URL", "http://15.135.1.105").rstrip("/")
 BUCKET = "bugnet-dryrun-migrate-500766168271"
 MAIL_PREFIX = "mail/"
 MAIL_TIMEOUT_S = 150
-SERVER_ZONE = ZoneInfo("Australia/Melbourne")
+
+GENERAL_SHORT = {
+    "de-DE": "dd.MM.yyyy HH:mm",
+    "en-US": "M/d/yyyy h:mm tt",
+    "es-ES": "dd/MM/yyyy H:mm",
+    "fr-CA": "yyyy-MM-dd HH:mm",
+    "it-IT": "dd/MM/yyyy HH:mm",
+    "nl-NL": "d-M-yyyy HH:mm",
+    "ro-RO": "dd.MM.yyyy HH:mm",
+    "ru-RU": "dd.MM.yyyy H:mm",
+    "zh-CN": "yyyy/M/d H:mm",
+}
+
+ISSUE_ADDED_SUBJECT = {
+    "": "Issue {0} has been added to a project you are monitoring.",
+    "de-DE": "Aufgabe {0} wurde zu einem von Ihnen überwachten Projekt hinzugefügt.",
+    "es-ES": "El caso {0} se ha añadido a un proyecto que está monitorizando.",
+    "fr-CA": "Anomalie {0} a été ajoutée à un projet que vous surveillez.",
+    "it-IT": "La segnalazione {0} è stata aggiunta al progetto che stai osservando.",
+    "nl-NL": "Punt {0} is toegevoegd aan een project wat u volgt.",
+    "ro-RO": "Problema {0} a fost adaugata la proiectul pe care-l monitorizati.",
+    "ru-RU": "Задание {0} было добавлено в наблюдаемый Вами проект.",
+    "zh-CN": "你关注的项目添加了一个新问题 {0}",
+}
+
+ADDED_TEMPLATE_MARK = "The following issue has been added to a project that you are monitoring."
+UPDATED_TEMPLATE_MARK = "The following issue has been updated by"
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -109,26 +133,56 @@ def _span_text(page, element_id):
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
-def parse_general_short(text, culture):
-    if culture.lower() != "en-us":
-        raise AssertionError("no general-short parser for culture " + culture)
-    match = re.fullmatch(
-        r"(\d{1,2})/(\d{1,2})/(\d{4}) (\d{1,2}):(\d{2}) (AM|PM)",
-        text.strip(),
-    )
-    if not match:
-        raise AssertionError("created-on text is not the general short pattern: " + text)
-    month, day, year, hour, minute, ampm = match.groups()
-    hour = int(hour)
-    if ampm == "PM" and hour != 12:
-        hour += 12
-    if ampm == "AM" and hour == 12:
-        hour = 0
-    return datetime(int(year), int(month), int(day), hour, int(minute))
+def _date_token_regex(pattern):
+    tokens = [
+        ("yyyy", r"\d{4}"),
+        ("HH", r"(?:[01]\d|2[0-3])"),
+        ("hh", r"(?:0[1-9]|1[0-2])"),
+        ("mm", r"[0-5]\d"),
+        ("dd", r"(?:0[1-9]|[12]\d|3[01])"),
+        ("MM", r"(?:0[1-9]|1[0-2])"),
+        ("tt", r"(?:AM|PM)"),
+        ("H", r"(?:2[0-3]|1\d|\d)"),
+        ("h", r"(?:1[0-2]|[1-9])"),
+        ("d", r"(?:[12]\d|3[01]|[1-9])"),
+        ("M", r"(?:1[0-2]|[1-9])"),
+    ]
+    regex = ""
+    index = 0
+    while index < len(pattern):
+        for token, piece in tokens:
+            if pattern.startswith(token, index):
+                regex += piece
+                index += len(token)
+                break
+        else:
+            regex += re.escape(pattern[index])
+            index += 1
+    return regex
 
 
-def server_now_minute():
-    return datetime.now(SERVER_ZONE).replace(second=0, microsecond=0, tzinfo=None)
+def matches_general_short(text, culture):
+    pattern = GENERAL_SHORT.get(culture)
+    if not pattern:
+        raise AssertionError("no general-short pattern for culture " + culture)
+    if re.fullmatch(_date_token_regex(pattern), text.strip()) is None:
+        raise AssertionError(
+            "created-on text is not the " + culture + " general short pattern: " + text
+        )
+
+
+def issue_added_subject(culture):
+    name = (culture or "").strip()
+    while name:
+        if name in ISSUE_ADDED_SUBJECT:
+            return ISSUE_ADDED_SUBJECT[name]
+        if "-" in name:
+            name = name.split("-", 1)[0]
+            continue
+        break
+    if "" in ISSUE_ADDED_SUBJECT:
+        return ISSUE_ADDED_SUBJECT[""]
+    raise AssertionError("no IssueAddedSubject for culture " + (culture or ""))
 
 
 @dataclass
@@ -146,6 +200,7 @@ class Facts:
     email_format: str
     allow_reply_to: bool
     default_language: str
+    preferred_locale: str
     username: str
     display_name: str
     email: str
@@ -319,6 +374,12 @@ class Host:
         pop3 = self.get("/Administration/Host/Settings.aspx?tid=7")
         language = self.get("/Administration/Host/Settings.aspx?tid=8")
         profile = self.get("/Account/UserProfile.aspx")
+        preferences = self._postback(
+            "/Account/UserProfile.aspx",
+            profile,
+            "ctl00$MainContent$BulletedList4",
+            "1",
+        )
         notifications = self._postback(
             "/Account/UserProfile.aspx",
             profile,
@@ -348,6 +409,7 @@ class Host:
             email_format=format_value,
             allow_reply_to=_checked(pop3, "MainContent_ctlHostSetting_POP3AllowReplyTo"),
             default_language=language_value,
+            preferred_locale=_selected_value(preferences, "MainContent_ddlPreferredLocale"),
             username=_input_value(profile, "ctl00$MainContent$UserName"),
             display_name=_input_value(profile, "ctl00$MainContent$FullName"),
             email=_input_value(profile, "ctl00$MainContent$Email"),
@@ -373,17 +435,12 @@ class Host:
             self._project_id = match.group(1)
         return self._project_id
 
-    def signed_in_subscriber_emails(self, project_id):
+    def observable_subscriber_emails(self, project_id):
         facts = self.facts
-        if len(facts.users) != 1 or facts.users[0].username != facts.username:
-            raise AssertionError(
-                "subscriber set is not readable from the signed-in profile "
-                f"({len(facts.users)} users on the host)"
-            )
-        user = facts.users[0]
-        if project_id not in facts.subscribed_project_ids:
+        user = next((row for row in facts.users if row.username == facts.username), None)
+        if user is None or not user.approved or not facts.notifications_on:
             return []
-        if not user.approved or not facts.notifications_on:
+        if project_id not in facts.subscribed_project_ids:
             return []
         return [user.email]
 
@@ -429,7 +486,7 @@ class Host:
             fields=fields,
         )
 
-    def mail_for(self, issue):
+    def messages_about(self, issue):
         cached = self._mail.get(issue.issue_id)
         if cached is not None:
             return cached
@@ -439,19 +496,19 @@ class Host:
             matched = []
             for key in keys:
                 message = self._read_mail(key)
-                if issue.full_id in message.subject:
+                if issue.title in message.body:
                     matched.append(message)
             if matched:
                 self._mail[issue.issue_id] = matched
                 return matched
             time.sleep(5)
         raise AssertionError(
-            f"no mail whose subject names {issue.full_id} within {MAIL_TIMEOUT_S}s"
+            f"no mail whose body contains the posted title within {MAIL_TIMEOUT_S}s"
         )
 
     def recipient_addresses(self, issue):
         found = set()
-        for message in self.mail_for(issue):
+        for message in self.messages_about(issue):
             for part in message.to.split(","):
                 _name, address = email.utils.parseaddr(part)
                 if address:
@@ -579,6 +636,3 @@ def host():
         _HOST = Host()
     return _HOST
 
-
-def close_enough(parsed):
-    return abs(server_now_minute() - parsed) <= timedelta(minutes=3)

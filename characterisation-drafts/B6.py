@@ -8,7 +8,7 @@ class B6Test(unittest.TestCase):
     def test_B6(self):
         issue = host().create("B6")
         facts = host().facts
-        message = host().mail_for(issue)[0]
+        message = host().messages_about(issue)[0]
         name, address = email.utils.parseaddr(message.sender)
         self.assertEqual(facts.application_title, name)
         local, separator, domain = facts.host_email.partition("@")

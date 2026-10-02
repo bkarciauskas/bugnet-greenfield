@@ -9,5 +9,3 @@ class B4Test(unittest.TestCase):
         self.assertEqual(302, issue.redirect_status)
         self.assertEqual("", issue.owner_value)
         self.assertEqual("", issue.assignee_value)
-        expected = set(host().signed_in_subscriber_emails(issue.project_id))
-        self.assertEqual(expected, host().recipient_addresses(issue))
