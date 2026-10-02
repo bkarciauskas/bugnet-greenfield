@@ -1,0 +1,7 @@
+diff --git a/characterisation-drafts/CreateIssueTests.cs b/characterisation-drafts/CreateIssueTests.cs
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/characterisation-drafts/CreateIssueTests.cs
+@@ -0,0 +1 @@
++draft

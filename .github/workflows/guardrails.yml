@@ -1,0 +1,40 @@
+name: guardrails
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base revision
+        if: github.event_name == 'pull_request'
+        run: git fetch origin "${{ github.base_ref }}"
+
+      - name: Run guardrail tests
+        run: bash scripts/run-tests.sh
+
+      - name: Verify guardrails fail closed
+        run: bash scripts/verify-guardrails.sh
+
+      - name: Block unapproved characterisation-tests edits
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python3 scripts/check_protected_path.py --base "origin/${{ github.base_ref }}" --head HEAD
+          else
+            python3 scripts/check_protected_path.py --base HEAD~1 --head HEAD
+          fi

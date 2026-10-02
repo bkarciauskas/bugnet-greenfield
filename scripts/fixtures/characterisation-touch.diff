@@ -1,0 +1,7 @@
+diff --git a/characterisation-tests/README.md b/characterisation-tests/README.md
+index 1111111..2222222 100644
+--- a/characterisation-tests/README.md
++++ b/characterisation-tests/README.md
+@@ -1 +1,2 @@
+ protected
++agent
