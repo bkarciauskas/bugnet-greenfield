@@ -2,7 +2,7 @@
 
 Greenfield .NET 8 rebuild of BugNET (migration dry run). Legacy source: bkarciauskas/bugnet
 
-Discovery notes live in `docs/`. The first slice, creating an issue and the email that follows, is mapped in [docs/soap-create-issue.md](docs/soap-create-issue.md).
+Discovery notes live in `docs/`. The first slice, creating an issue and the email that follows, is mapped in [docs/soap-create-issue.md](docs/soap-create-issue.md). The .NET 8 layout for that slice is [docs/create-issue-slice-architecture.md](docs/create-issue-slice-architecture.md). The build has not started.
 
 ## Legacy host
 
