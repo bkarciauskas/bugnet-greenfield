@@ -8,5 +8,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BugNet.Core\BugNet.Core.csproj" />
+    <ProjectReference Include="..\BugNet.Data\BugNet.Data.csproj" />
   </ItemGroup>
 </Project>
