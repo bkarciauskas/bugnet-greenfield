@@ -20,24 +20,28 @@ $siteName = "BugNetGreenfield"
 $sitePath = "C:\inetpub\bugnet-greenfield"
 $poolName = "BugNetGreenfield"
 
-if (-not (Get-Command sqlcmd -ErrorAction SilentlyContinue)) {
+$sqlcmd = Get-Command sqlcmd -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+if (-not $sqlcmd) {
+    $sqlcmd = Get-ChildItem "C:\Program Files\Microsoft SQL Server" -Recurse -Filter sqlcmd.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $sqlcmd) {
     Write-Log "sqlcmd missing"
     exit 1
 }
 
 $instance = "localhost\SQLEXPRESS"
-$probe = & sqlcmd -S $instance -E -Q "SELECT 1" -b -h -1 2>&1
+$probe = & $sqlcmd -S $instance -E -Q "SELECT 1" -b -h -1 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Log "sql express probe failed"
     exit 1
 }
 
-$db = & sqlcmd -S $instance -E -Q "SET NOCOUNT ON; SELECT DB_ID(N'BugNetGreenfield')" -h -1 -W
+$db = & $sqlcmd -S $instance -E -Q "SET NOCOUNT ON; SELECT DB_ID(N'BugNetGreenfield')" -h -1 -W
 if ($db -match "NULL" -or [string]::IsNullOrWhiteSpace($db)) {
     Write-Log "copying BugNET into BugNetGreenfield"
-    & sqlcmd -S $instance -E -Q "BACKUP DATABASE [BugNET] TO DISK = N'C:\migrate\bugnet-green.bak' WITH COPY_ONLY, INIT, COMPRESSION" -b
+    & $sqlcmd -S $instance -E -Q "BACKUP DATABASE [BugNET] TO DISK = N'C:\migrate\bugnet-green.bak' WITH COPY_ONLY, INIT" -b
     if ($LASTEXITCODE -ne 0) { Write-Log "backup failed"; exit 1 }
-    $files = & sqlcmd -S $instance -E -Q "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'C:\migrate\bugnet-green.bak'" -s "|" -W -h -1
+    $files = & $sqlcmd -S $instance -E -Q "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'C:\migrate\bugnet-green.bak'" -s "|" -W -h -1
     $moves = @()
     foreach ($row in $files) {
         $parts = $row.Split("|")
@@ -50,23 +54,25 @@ if ($db -match "NULL" -or [string]::IsNullOrWhiteSpace($db)) {
         $moves += "MOVE N'$logical' TO N'$dest'"
     }
     $restore = "RESTORE DATABASE [BugNetGreenfield] FROM DISK = N'C:\migrate\bugnet-green.bak' WITH " + ($moves -join ", ")
-    & sqlcmd -S $instance -E -Q $restore -b
+    & $sqlcmd -S $instance -E -Q $restore -b
     if ($LASTEXITCODE -ne 0) { Write-Log "restore failed"; exit 1 }
     Write-Log "database restored"
 } else {
     Write-Log "database already present"
 }
 
-$login = "IIS APPPOOL\$poolName"
-& sqlcmd -S $instance -E -Q "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$login') CREATE LOGIN [$login] FROM WINDOWS;" -b
-& sqlcmd -S $instance -E -d BugNetGreenfield -Q "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$login') CREATE USER [$login] FOR LOGIN [$login]; ALTER ROLE db_owner ADD MEMBER [$login];" -b
-
 if (-not (Test-Path "C:\migrate\markers\dotnet-hosting-8.done")) {
     Write-Log "installing asp.net core 8 hosting bundle"
     $installer = "C:\migrate\dotnet-hosting-8.exe"
     Invoke-WebRequest -Uri "https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe" -OutFile $installer -UseBasicParsing
     $proc = Start-Process -FilePath $installer -ArgumentList "/quiet","/norestart" -Wait -PassThru
-    if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+    if ($proc.ExitCode -eq 3010) {
+        New-Item -ItemType File -Force -Path "C:\migrate\markers\dotnet-hosting-8.done" | Out-Null
+        Write-Log "hosting bundle requested reboot"
+        shutdown.exe /r /t 15 /f
+        exit 0
+    }
+    if ($proc.ExitCode -ne 0) {
         Write-Log ("hosting bundle exit " + $proc.ExitCode)
         exit 1
     }
@@ -94,6 +100,9 @@ if (-not (Test-Path "IIS:\AppPools\$poolName")) {
     New-WebAppPool $poolName | Out-Null
     Set-ItemProperty "IIS:\AppPools\$poolName" managedRuntimeVersion ""
 }
+$login = "IIS APPPOOL\$poolName"
+& $sqlcmd -S $instance -E -Q "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$login') CREATE LOGIN [$login] FROM WINDOWS;" -b
+& $sqlcmd -S $instance -E -d BugNetGreenfield -Q "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$login') CREATE USER [$login] FOR LOGIN [$login]; ALTER ROLE db_owner ADD MEMBER [$login];" -b
 if (-not (Get-Website -Name $siteName -ErrorAction SilentlyContinue)) {
     New-Website -Name $siteName -Port 8080 -PhysicalPath $sitePath -ApplicationPool $poolName | Out-Null
 } else {
