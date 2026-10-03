@@ -19,6 +19,18 @@ required=(
   .cursor/skills/verify-guardrails/SKILL.md
   characterisation-tests/README.md
   characterisation-drafts/README.md
+  Directory.Build.props
+  .editorconfig
+  global.json
+  BugNet.sln
+  scripts/run-dotnet.sh
+  src/BugNet.Core/BugNet.Core.csproj
+  src/BugNet.Data/BugNet.Data.csproj
+  src/BugNet.Web/BugNet.Web.csproj
+  tests/BugNet.Architecture.Tests/BugNet.Architecture.Tests.csproj
+  tests/BugNet.Architecture.Tests/LayerRules.cs
+  tests/BugNet.Architecture.Tests/LegacyReferences.txt
+  tests/BugNet.Core.Tests/BugNet.Core.Tests.csproj
 )
 
 missing=0
@@ -41,6 +53,39 @@ done
 
 if ! bash -n scripts/run-tests.sh || ! bash -n scripts/verify-guardrails.sh; then
   fail_closed "scripts/run-tests.sh"
+  exit 1
+fi
+
+if ! bash -n scripts/run-dotnet.sh; then
+  fail_closed "scripts/run-dotnet.sh"
+  exit 1
+fi
+
+if ! grep -q '<Nullable>enable</Nullable>' Directory.Build.props \
+  || ! grep -q '<TreatWarningsAsErrors>true</TreatWarningsAsErrors>' Directory.Build.props \
+  || ! grep -Eq '<AnalysisLevel>latest-(all|recommended)</AnalysisLevel>' Directory.Build.props \
+  || ! grep -q '<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>' Directory.Build.props; then
+  fail_closed "Directory.Build.props"
+  exit 1
+fi
+
+if ! grep -q 'dotnet_diagnostic.CS8600.severity = error' .editorconfig; then
+  fail_closed ".editorconfig"
+  exit 1
+fi
+
+if ! grep -q 'bash scripts/run-dotnet.sh' .cursor/hooks/stop_tests.py \
+  || ! grep -q 'dotnet build -warnaserror' scripts/run-dotnet.sh \
+  || ! grep -q 'dotnet test -warnaserror' scripts/run-dotnet.sh \
+  || ! grep -q 'FAIL CLOSED:' scripts/run-dotnet.sh; then
+  fail_closed "scripts/run-dotnet.sh"
+  exit 1
+fi
+
+if ! grep -q 'dotnet build -warnaserror' .github/workflows/guardrails.yml \
+  || ! grep -q 'dotnet test -warnaserror' .github/workflows/guardrails.yml \
+  || ! grep -q 'dotnet test tests/BugNet.Architecture.Tests/BugNet.Architecture.Tests.csproj -warnaserror' .github/workflows/guardrails.yml; then
+  fail_closed ".github/workflows/guardrails.yml"
   exit 1
 fi
 
