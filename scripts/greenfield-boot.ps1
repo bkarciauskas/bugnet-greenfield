@@ -9,7 +9,26 @@ New-Item -ItemType Directory -Force -Path C:\migrate, C:\migrate\markers, C:\Ema
 function Write-Log([string]$message) {
     $line = (Get-Date).ToUniversalTime().ToString("o") + " " + $message
     Add-Content -Path $log -Value $line
-    & curl.exe -sS --max-time 30 -X PUT --upload-file $log "__LOG_PUT__" -o NUL
+    curl.exe -sS --max-time 30 -X PUT --upload-file $log "__LOG_PUT__" -o NUL
+}
+
+function Invoke-Sql([string[]]$ArgumentList) {
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $sqlcmd
+    $quoted = foreach ($arg in $ArgumentList) {
+        if ($arg -match '^[A-Za-z0-9_./:\\-]+$') { $arg } else { '"' + ($arg -replace '"', '\"') + '"' }
+    }
+    $start.Arguments = $quoted -join ' '
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $false
+    $start.CreateNoWindow = $true
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $start
+    [void]$proc.Start()
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $proc.WaitForExit()
+    return [pscustomobject]@{ Code = $proc.ExitCode; Out = $stdout }
 }
 
 if (-not (Get-NetFirewallRule -DisplayName "BugNetGreenfield-8080" -ErrorAction SilentlyContinue)) {
@@ -61,18 +80,20 @@ if (-not $sqlcmd) {
 }
 
 $instance = "localhost\SQLEXPRESS"
-$probe = & $sqlcmd -S $instance -E -Q "SELECT 1" -b -h -1 2>&1
-if ($LASTEXITCODE -ne 0) {
+$probe = Invoke-Sql @("-S", $instance, "-E", "-Q", "SELECT 1", "-b", "-h", "-1")
+if ($probe.Code -ne 0) {
     Write-Log "sql express probe failed"
     exit 1
 }
 
-$db = & $sqlcmd -S $instance -E -Q "SET NOCOUNT ON; SELECT DB_ID(N'BugNetGreenfield')" -h -1 -W
+$dbResult = Invoke-Sql @("-S", $instance, "-E", "-Q", "SET NOCOUNT ON; SELECT DB_ID(N'BugNetGreenfield')", "-h", "-1", "-W")
+$db = $dbResult.Out
 if ($db -match "NULL" -or [string]::IsNullOrWhiteSpace($db)) {
     Write-Log "copying BugNET into BugNetGreenfield"
-    & $sqlcmd -S $instance -E -Q "BACKUP DATABASE [BugNET] TO DISK = N'C:\migrate\bugnet-green.bak' WITH COPY_ONLY, INIT" -b
-    if ($LASTEXITCODE -ne 0) { Write-Log "backup failed"; exit 1 }
-    $files = & $sqlcmd -S $instance -E -Q "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'C:\migrate\bugnet-green.bak'" -s "|" -W -h -1
+    $backup = Invoke-Sql @("-S", $instance, "-E", "-Q", "BACKUP DATABASE [BugNET] TO DISK = N'C:\migrate\bugnet-green.bak' WITH COPY_ONLY, INIT", "-b")
+    if ($backup.Code -ne 0) { Write-Log "backup failed"; exit 1 }
+    $fileResult = Invoke-Sql @("-S", $instance, "-E", "-Q", "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'C:\migrate\bugnet-green.bak'", "-s", "|", "-W", "-h", "-1")
+    $files = $fileResult.Out -split "`r?`n"
     $moves = @()
     foreach ($row in $files) {
         $parts = $row.Split("|")
@@ -85,8 +106,8 @@ if ($db -match "NULL" -or [string]::IsNullOrWhiteSpace($db)) {
         $moves += "MOVE N'$logical' TO N'$dest'"
     }
     $restore = "RESTORE DATABASE [BugNetGreenfield] FROM DISK = N'C:\migrate\bugnet-green.bak' WITH " + ($moves -join ", ")
-    & $sqlcmd -S $instance -E -Q $restore -b
-    if ($LASTEXITCODE -ne 0) { Write-Log "restore failed"; exit 1 }
+    $restored = Invoke-Sql @("-S", $instance, "-E", "-Q", $restore, "-b")
+    if ($restored.Code -ne 0) { Write-Log "restore failed"; exit 1 }
     Write-Log "database restored"
 } else {
     Write-Log "database already present"
@@ -95,7 +116,7 @@ if ($db -match "NULL" -or [string]::IsNullOrWhiteSpace($db)) {
 if (-not (Test-Path "C:\migrate\markers\dotnet-hosting-8.done")) {
     Write-Log "installing asp.net core 8 hosting bundle"
     $installer = "C:\migrate\dotnet-hosting-8.exe"
-    & curl.exe -sS -L "https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe" -o $installer
+    curl.exe -sS -L "https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe" -o $installer
     $proc = Start-Process -FilePath $installer -ArgumentList "/quiet","/norestart" -Wait -PassThru
     if ($proc.ExitCode -eq 3010) {
         New-Item -ItemType File -Force -Path "C:\migrate\markers\dotnet-hosting-8.done" | Out-Null
@@ -111,7 +132,7 @@ if (-not (Test-Path "C:\migrate\markers\dotnet-hosting-8.done")) {
 }
 
 Write-Log "downloading site"
-& curl.exe -sS -L "__APP_GET__" -o "C:\migrate\bugnet-greenfield.zip"
+curl.exe -sS -L "__APP_GET__" -o "C:\migrate\bugnet-greenfield.zip"
 if (Test-Path $sitePath) { Remove-Item $sitePath -Recurse -Force }
 Expand-Archive -Path "C:\migrate\bugnet-greenfield.zip" -DestinationPath $sitePath -Force
 $webConfigPath = Join-Path $sitePath "web.config"
@@ -136,8 +157,8 @@ if (-not (Test-Path "IIS:\AppPools\$poolName")) {
     Set-ItemProperty "IIS:\AppPools\$poolName" managedRuntimeVersion ""
 }
 $login = "IIS APPPOOL\$poolName"
-& $sqlcmd -S $instance -E -Q "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$login') CREATE LOGIN [$login] FROM WINDOWS;" -b
-& $sqlcmd -S $instance -E -d BugNetGreenfield -Q "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$login') CREATE USER [$login] FOR LOGIN [$login]; ALTER ROLE db_owner ADD MEMBER [$login];" -b
+[void](Invoke-Sql @("-S", $instance, "-E", "-Q", "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$login') CREATE LOGIN [$login] FROM WINDOWS;", "-b"))
+[void](Invoke-Sql @("-S", $instance, "-E", "-d", "BugNetGreenfield", "-Q", "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$login') CREATE USER [$login] FOR LOGIN [$login]; ALTER ROLE db_owner ADD MEMBER [$login];", "-b"))
 if (-not (Get-Website -Name $siteName -ErrorAction SilentlyContinue)) {
     New-Website -Name $siteName -Port 8080 -PhysicalPath $sitePath -ApplicationPool $poolName | Out-Null
 } else {
@@ -170,20 +191,20 @@ $ErrorActionPreference = "Stop"
 $dir = "C:\EmailGreenfield"
 $listPath = "C:\migrate\mail-new-put-urls.txt"
 $usedPath = "C:\migrate\mail-new-used.txt"
-& curl.exe -sS -L "__MAIL_LIST_GET__" -o $listPath
+curl.exe -sS -L "__MAIL_LIST_GET__" -o $listPath
 $used = @{}
 if (Test-Path $usedPath) {
     Get-Content $usedPath | ForEach-Object { if ($_) { $used[$_] = $true } }
 }
 $free = @(Get-Content $listPath | Where-Object { $_ -and -not $used.ContainsKey($_) })
 if ($free.Count -lt 10) {
-    try { & curl.exe -sS -X PUT -d "slots-low $($free.Count)" "__STATUS_PUT__" -o NUL } catch {}
+    try { curl.exe -sS -X PUT -d "slots-low $($free.Count)" "__STATUS_PUT__" -o NUL } catch {}
 }
 Get-ChildItem $dir -Filter *.eml | Sort-Object LastWriteTime | ForEach-Object {
     if ($free.Count -eq 0) { return }
     $url = $free[0]
     if ($free.Count -eq 1) { $free = @() } else { $free = @($free | Select-Object -Skip 1) }
-    & curl.exe -sS -X PUT --upload-file $_.FullName -H "Content-Type: message/rfc822" "$url" -o NUL
+    curl.exe -sS -X PUT --upload-file $_.FullName -H "Content-Type: message/rfc822" "$url" -o NUL
     Add-Content $usedPath $url
     Remove-Item $_.FullName -Force
 }
