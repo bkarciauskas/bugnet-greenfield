@@ -377,13 +377,17 @@ class GuardrailTests(unittest.TestCase):
         self.assertEqual(gate("true"), ["true"])
 
     def test_dotnet_script_fails_closed_when_sdk_missing(self) -> None:
-        with tempfile.TemporaryDirectory() as home:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = str(Path(tmp) / "home")
+            empty_path = str(Path(tmp) / "empty-path")
+            os.makedirs(home)
+            os.makedirs(empty_path)
             result = subprocess.run(
-                ["bash", str(ROOT / "scripts" / "run-dotnet.sh")],
+                ["/usr/bin/bash", str(ROOT / "scripts" / "run-dotnet.sh")],
                 capture_output=True,
                 text=True,
                 cwd=ROOT,
-                env={"PATH": "/usr/bin:/bin", "HOME": home, "PYTHONDONTWRITEBYTECODE": "1"},
+                env={"PATH": empty_path, "HOME": home, "PYTHONDONTWRITEBYTECODE": "1"},
             )
         self.assertEqual(result.returncode, 127, result.stdout + result.stderr)
         self.assertIn("FAIL CLOSED:", result.stdout)
