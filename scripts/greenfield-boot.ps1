@@ -84,6 +84,11 @@ Write-Log "downloading site"
 Invoke-WebRequest -Uri "__APP_GET__" -OutFile "C:\migrate\bugnet-greenfield.zip" -UseBasicParsing
 if (Test-Path $sitePath) { Remove-Item $sitePath -Recurse -Force }
 Expand-Archive -Path "C:\migrate\bugnet-greenfield.zip" -DestinationPath $sitePath -Force
+$webConfigPath = Join-Path $sitePath "web.config"
+$webConfig = Get-Content $webConfigPath -Raw
+$dotnet = "C:\Program Files\dotnet\dotnet.exe"
+$webConfig = $webConfig.Replace('processPath="dotnet"', "processPath=`"$dotnet`"")
+Set-Content -Path $webConfigPath -Value $webConfig -Encoding ascii
 @"
 {
   "ConnectionStrings": {
@@ -112,8 +117,23 @@ $acl = Get-Acl "C:\EmailGreenfield"
 $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($login, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
 $acl.SetAccessRule($rule)
 Set-Acl "C:\EmailGreenfield" $acl
+if (-not (Get-NetFirewallRule -DisplayName "BugNetGreenfield-8080" -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName "BugNetGreenfield-8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow | Out-Null
+}
 Start-Website -Name $siteName
 Write-Log "site started on 8080"
+Start-Sleep -Seconds 3
+try {
+    $probe = Invoke-WebRequest -Uri "http://127.0.0.1:8080/" -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop
+    Write-Log ("local probe " + [int]$probe.StatusCode)
+} catch {
+    $response = $_.Exception.Response
+    if ($response) {
+        Write-Log ("local probe " + [int]$response.StatusCode)
+    } else {
+        Write-Log ("local probe failed " + $_.Exception.Message)
+    }
+}
 
 $uploader = @'
 $ErrorActionPreference = "Stop"
