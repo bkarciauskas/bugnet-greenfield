@@ -154,10 +154,11 @@ $webConfig = Get-Content $webConfigPath -Raw
 $dotnet = "C:\Program Files\dotnet\dotnet.exe"
 $webConfig = $webConfig.Replace('processPath="dotnet"', "processPath=`"$dotnet`"")
 Set-Content -Path $webConfigPath -Value $webConfig -Encoding ascii
+$sqlServer = $instance.Replace("\", "\\")
 @"
 {
   "ConnectionStrings": {
-    "BugNet": "Server=localhost\\SQLEXPRESS;Database=BugNetGreenfield;Trusted_Connection=True;TrustServerCertificate=True"
+    "BugNet": "Server=$sqlServer;Database=BugNetGreenfield;Trusted_Connection=True;TrustServerCertificate=True"
   },
   "Mail": {
     "PickupDirectory": "C:\\EmailGreenfield"
@@ -171,8 +172,10 @@ if (-not (Test-Path "IIS:\AppPools\$poolName")) {
     Set-ItemProperty "IIS:\AppPools\$poolName" managedRuntimeVersion ""
 }
 $login = "IIS APPPOOL\$poolName"
-[void](Invoke-Sql @("-S", $instance, "-E", "-Q", "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$login') CREATE LOGIN [$login] FROM WINDOWS;", "-b"))
-[void](Invoke-Sql @("-S", $instance, "-E", "-d", "BugNetGreenfield", "-Q", "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$login') CREATE USER [$login] FOR LOGIN [$login]; ALTER ROLE db_owner ADD MEMBER [$login];", "-b"))
+$serverLogin = Invoke-Sql @("-S", $instance, "-E", "-Q", "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$login') CREATE LOGIN [$login] FROM WINDOWS;", "-b")
+Write-Log ("app pool server login " + $serverLogin.Code)
+$dbLogin = Invoke-Sql @("-S", $instance, "-E", "-d", "BugNetGreenfield", "-Q", "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$login') CREATE USER [$login] FOR LOGIN [$login]; ALTER ROLE db_owner ADD MEMBER [$login];", "-b")
+Write-Log ("app pool database login " + $dbLogin.Code)
 if (-not (Get-Website -Name $siteName -ErrorAction SilentlyContinue)) {
     New-Website -Name $siteName -Port 8080 -PhysicalPath $sitePath -ApplicationPool $poolName | Out-Null
 } else {
@@ -185,6 +188,7 @@ Set-Acl "C:\EmailGreenfield" $acl
 if ($progressListener) { $progressListener.Stop() }
 Start-Sleep -Seconds 2
 Start-Website -Name $siteName
+Restart-WebAppPool -Name $poolName
 Write-Log "site started on 8080"
 Start-Sleep -Seconds 3
 try {
@@ -224,10 +228,17 @@ Get-ChildItem $dir -Filter *.eml | Sort-Object LastWriteTime | ForEach-Object {
 }
 '@
 Set-Content -Path "C:\migrate\mail-new-upload.ps1" -Value $uploader -Encoding ascii
-$task = Get-ScheduledTask -TaskName "bugnet-mail-capture-greenfield" -ErrorAction SilentlyContinue
-if (-not $task) {
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\migrate\mail-new-upload.ps1"
-    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 9999)
-    Register-ScheduledTask -TaskName "bugnet-mail-capture-greenfield" -Action $action -Trigger $trigger -User "SYSTEM" -RunLevel Highest | Out-Null
+try {
+    $task = Get-ScheduledTask -TaskName "bugnet-mail-capture-greenfield" -ErrorAction SilentlyContinue
+    if (-not $task) {
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\migrate\mail-new-upload.ps1"
+        $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 30)
+        Register-ScheduledTask -TaskName "bugnet-mail-capture-greenfield" -Action $action -Trigger $trigger -User "SYSTEM" -RunLevel Highest | Out-Null
+        Write-Log "mail task registered"
+    } else {
+        Write-Log "mail task already present"
+    }
+} catch {
+    Write-Log ("mail task failed " + $_.Exception.Message)
 }
 Write-Log "greenfield boot done"
