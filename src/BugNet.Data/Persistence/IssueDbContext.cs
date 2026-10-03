@@ -74,7 +74,7 @@ internal sealed class IssueDbContext : DbContext
             entity.Property(row => row.IssueId).ValueGeneratedOnAdd();
             entity.Property(row => row.IssueEstimation).HasPrecision(5, 2);
             entity.Property(row => row.DateCreated).HasColumnType("datetime").HasDefaultValueSql("getdate()").ValueGeneratedOnAdd();
-            entity.Property(row => row.LastUpdate).HasColumnType("datetime").HasDefaultValueSql("getdate()").ValueGeneratedOnAdd();
+            entity.Property(row => row.LastUpdate).HasColumnType("datetime");
             entity.Property(row => row.IssueDueDate).HasColumnType("datetime");
         });
         modelBuilder.Entity<VoteRow>(entity =>

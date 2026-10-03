@@ -51,6 +51,7 @@ public sealed class IssueDatabase : IIssueStore
             IssueVisibility = 0,
             IssueEstimation = command.Estimation ?? 0,
             IssueProgress = command.Progress,
+            LastUpdate = DateTime.Now,
             LastUpdateUserId = creator.UserId,
         };
         db.Issues.Add(issue);
