@@ -9,6 +9,9 @@ ROWS = [f"B{number}" for number in range(1, 17) if number != 7] + ["U1"]
 
 
 def main():
+    base = os.environ.get("BUGNET_BASE_URL", "http://15.135.1.105").rstrip("/")
+    prefix = os.environ.get("BUGNET_MAIL_PREFIX", "mail/")
+    print(f"target {base} mail {prefix}")
     sys.path.insert(0, HERE)
     suite = unittest.TestSuite()
     loader = unittest.TestLoader()

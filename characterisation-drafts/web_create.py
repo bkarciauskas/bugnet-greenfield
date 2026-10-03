@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 
 BASE = os.environ.get("BUGNET_BASE_URL", "http://15.135.1.105").rstrip("/")
 BUCKET = "bugnet-dryrun-migrate-500766168271"
-MAIL_PREFIX = "mail/"
+MAIL_PREFIX = os.environ.get("BUGNET_MAIL_PREFIX", "mail/")
+if MAIL_PREFIX and not MAIL_PREFIX.endswith("/"):
+    MAIL_PREFIX = MAIL_PREFIX + "/"
 MAIL_TIMEOUT_S = 150
 
 GENERAL_SHORT = {
