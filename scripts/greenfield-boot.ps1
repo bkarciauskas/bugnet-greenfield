@@ -21,14 +21,15 @@ function Invoke-Sql([string[]]$ArgumentList) {
     $start.Arguments = $quoted -join ' '
     $start.UseShellExecute = $false
     $start.RedirectStandardOutput = $true
-    $start.RedirectStandardError = $false
+    $start.RedirectStandardError = $true
     $start.CreateNoWindow = $true
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $start
     [void]$proc.Start()
-    $stdout = $proc.StandardOutput.ReadToEnd()
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
     $proc.WaitForExit()
-    return [pscustomobject]@{ Code = $proc.ExitCode; Out = $stdout }
+    return [pscustomobject]@{ Code = $proc.ExitCode; Out = $outTask.Result; Err = $errTask.Result }
 }
 
 if (-not (Get-NetFirewallRule -DisplayName "BugNetGreenfield-8080" -ErrorAction SilentlyContinue)) {
@@ -66,6 +67,7 @@ try {
 }
 
 Write-Log "greenfield boot start"
+Write-Log ("identity " + [Security.Principal.WindowsIdentity]::GetCurrent().Name)
 $siteName = "BugNetGreenfield"
 $sitePath = "C:\inetpub\bugnet-greenfield"
 $poolName = "BugNetGreenfield"
@@ -80,7 +82,15 @@ if (-not $sqlcmd) {
 }
 
 $instance = "localhost\SQLEXPRESS"
-$probe = Invoke-Sql @("-S", $instance, "-E", "-Q", "SELECT 1", "-b", "-h", "-1")
+$probe = $null
+foreach ($try in 1..12) {
+    $probe = Invoke-Sql @("-S", $instance, "-E", "-Q", "SELECT 1", "-b", "-h", "-1", "-l", "5")
+    if ($probe.Code -eq 0) { break }
+    $detail = (($probe.Err + " " + $probe.Out) -replace '\s+', ' ').Trim()
+    if ($detail.Length -gt 300) { $detail = $detail.Substring(0, 300) }
+    Write-Log ("sql express probe " + $try + " exit " + $probe.Code + " " + $detail)
+    Start-Sleep -Seconds 10
+}
 if ($probe.Code -ne 0) {
     Write-Log "sql express probe failed"
     exit 1
