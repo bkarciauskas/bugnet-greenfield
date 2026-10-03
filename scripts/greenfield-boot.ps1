@@ -2,17 +2,14 @@
 # User-data replaces the __TOKEN__ placeholders with single-use presigned URLs.
 # It does not change the site on port 80 and it does not create a shutdown task.
 $ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $log = "C:\migrate\greenfield-setup.log"
 New-Item -ItemType Directory -Force -Path C:\migrate, C:\migrate\markers, C:\EmailGreenfield | Out-Null
 
 function Write-Log([string]$message) {
     $line = (Get-Date).ToUniversalTime().ToString("o") + " " + $message
     Add-Content -Path $log -Value $line
-    try {
-        Invoke-WebRequest -Uri "__LOG_PUT__" -Method Put -InFile $log -UseBasicParsing | Out-Null
-    } catch {
-        Add-Content -Path $log -Value ((Get-Date).ToUniversalTime().ToString("o") + " log upload failed")
-    }
+    & curl.exe -sS -X PUT --upload-file $log "__LOG_PUT__" -o NUL
 }
 
 Write-Log "greenfield boot start"
@@ -64,13 +61,12 @@ if ($db -match "NULL" -or [string]::IsNullOrWhiteSpace($db)) {
 if (-not (Test-Path "C:\migrate\markers\dotnet-hosting-8.done")) {
     Write-Log "installing asp.net core 8 hosting bundle"
     $installer = "C:\migrate\dotnet-hosting-8.exe"
-    Invoke-WebRequest -Uri "https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe" -OutFile $installer -UseBasicParsing
+    & curl.exe -sS -L "https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe" -o $installer
     $proc = Start-Process -FilePath $installer -ArgumentList "/quiet","/norestart" -Wait -PassThru
     if ($proc.ExitCode -eq 3010) {
         New-Item -ItemType File -Force -Path "C:\migrate\markers\dotnet-hosting-8.done" | Out-Null
         Write-Log "hosting bundle requested reboot"
-        shutdown.exe /r /t 15 /f
-        exit 0
+        exit 3010
     }
     if ($proc.ExitCode -ne 0) {
         Write-Log ("hosting bundle exit " + $proc.ExitCode)
@@ -81,7 +77,7 @@ if (-not (Test-Path "C:\migrate\markers\dotnet-hosting-8.done")) {
 }
 
 Write-Log "downloading site"
-Invoke-WebRequest -Uri "__APP_GET__" -OutFile "C:\migrate\bugnet-greenfield.zip" -UseBasicParsing
+& curl.exe -sS -L "__APP_GET__" -o "C:\migrate\bugnet-greenfield.zip"
 if (Test-Path $sitePath) { Remove-Item $sitePath -Recurse -Force }
 Expand-Archive -Path "C:\migrate\bugnet-greenfield.zip" -DestinationPath $sitePath -Force
 $webConfigPath = Join-Path $sitePath "web.config"
@@ -137,23 +133,24 @@ try {
 
 $uploader = @'
 $ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $dir = "C:\EmailGreenfield"
 $listPath = "C:\migrate\mail-new-put-urls.txt"
 $usedPath = "C:\migrate\mail-new-used.txt"
-Invoke-WebRequest -Uri "__MAIL_LIST_GET__" -OutFile $listPath -UseBasicParsing
+& curl.exe -sS -L "__MAIL_LIST_GET__" -o $listPath
 $used = @{}
 if (Test-Path $usedPath) {
     Get-Content $usedPath | ForEach-Object { if ($_) { $used[$_] = $true } }
 }
 $free = @(Get-Content $listPath | Where-Object { $_ -and -not $used.ContainsKey($_) })
 if ($free.Count -lt 10) {
-    try { Invoke-WebRequest -Uri "__STATUS_PUT__" -Method Put -Body "slots-low $($free.Count)" -UseBasicParsing | Out-Null } catch {}
+    try { & curl.exe -sS -X PUT -d "slots-low $($free.Count)" "__STATUS_PUT__" -o NUL } catch {}
 }
 Get-ChildItem $dir -Filter *.eml | Sort-Object LastWriteTime | ForEach-Object {
     if ($free.Count -eq 0) { return }
     $url = $free[0]
     if ($free.Count -eq 1) { $free = @() } else { $free = @($free | Select-Object -Skip 1) }
-    Invoke-WebRequest -Uri $url -Method Put -InFile $_.FullName -ContentType "message/rfc822" -UseBasicParsing | Out-Null
+    & curl.exe -sS -X PUT --upload-file $_.FullName -H "Content-Type: message/rfc822" "$url" -o NUL
     Add-Content $usedPath $url
     Remove-Item $_.FullName -Force
 }
