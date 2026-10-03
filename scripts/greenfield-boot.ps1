@@ -15,31 +15,36 @@ function Write-Log([string]$message) {
 if (-not (Get-NetFirewallRule -DisplayName "BugNetGreenfield-8080" -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName "BugNetGreenfield-8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow | Out-Null
 }
-$progressListener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Any, 8080)
-$progressListener.Start()
-$progressShell = [powershell]::Create()
-$progressShell.Runspace = [runspacefactory]::CreateRunspace()
-$progressShell.Runspace.Open()
-[void]$progressShell.AddScript({
-    param($listener, $logPath)
-    while ($true) {
-        if (-not $listener.Pending()) { Start-Sleep -Milliseconds 200; continue }
-        $client = $listener.AcceptTcpClient()
-        try {
-            $text = "starting"
-            if (Test-Path $logPath) { $text = (Get-Content $logPath -Tail 12) -join "`n" }
-            $body = [Text.Encoding]::ASCII.GetBytes($text)
-            $header = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 200 OK`r`nContent-Type: text/plain`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n")
-            $stream = $client.GetStream()
-            $stream.Write($header, 0, $header.Length)
-            $stream.Write($body, 0, $body.Length)
-            $stream.Flush()
-        } finally {
-            $client.Close()
+$progressListener = $null
+try {
+    $progressListener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Any, 8080)
+    $progressListener.Start()
+    $progressShell = [powershell]::Create()
+    $progressShell.Runspace = [runspacefactory]::CreateRunspace()
+    $progressShell.Runspace.Open()
+    [void]$progressShell.AddScript({
+        param($listener, $logPath)
+        while ($true) {
+            if (-not $listener.Pending()) { Start-Sleep -Milliseconds 200; continue }
+            $client = $listener.AcceptTcpClient()
+            try {
+                $text = "starting"
+                if (Test-Path $logPath) { $text = (Get-Content $logPath -Tail 12) -join "`n" }
+                $body = [Text.Encoding]::ASCII.GetBytes($text)
+                $header = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 200 OK`r`nContent-Type: text/plain`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n")
+                $stream = $client.GetStream()
+                $stream.Write($header, 0, $header.Length)
+                $stream.Write($body, 0, $body.Length)
+                $stream.Flush()
+            } finally {
+                $client.Close()
+            }
         }
-    }
-}).AddArgument($progressListener).AddArgument($log)
-$progressHandle = $progressShell.BeginInvoke()
+    }).AddArgument($progressListener).AddArgument($log)
+    $progressHandle = $progressShell.BeginInvoke()
+} catch {
+    Add-Content -Path $log -Value ((Get-Date).ToUniversalTime().ToString("o") + " progress listener failed")
+}
 
 Write-Log "greenfield boot start"
 $siteName = "BugNetGreenfield"
@@ -142,7 +147,7 @@ $acl = Get-Acl "C:\EmailGreenfield"
 $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($login, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
 $acl.SetAccessRule($rule)
 Set-Acl "C:\EmailGreenfield" $acl
-$progressListener.Stop()
+if ($progressListener) { $progressListener.Stop() }
 Start-Sleep -Seconds 2
 Start-Website -Name $siteName
 Write-Log "site started on 8080"
