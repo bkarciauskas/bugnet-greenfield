@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>BugNet.Data</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BugNet.Core\BugNet.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Compile assets stay in Data so Web can reference this project for wiring without seeing EF Core. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.31">
+      <PrivateAssets>compile;contentfiles;analyzers;build;buildTransitive</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   guardrails:
+    name: guardrails
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,3 +39,42 @@ jobs:
           else
             python3 scripts/check_protected_path.py --base HEAD~1 --head HEAD
           fi
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build with warnings as errors
+        run: dotnet build -warnaserror
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Test with warnings as errors
+        run: dotnet test -warnaserror
+
+  architecture:
+    name: architecture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Architecture tests
+        run: dotnet test tests/BugNet.Architecture.Tests/BugNet.Architecture.Tests.csproj -warnaserror

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eighteen checks for the stop hook, protected path, and fail-closed verify script."""
+"""Checks for the stop hook, the .NET build gate, the protected path, and fail-closed verify."""
 
 from __future__ import annotations
 
@@ -343,7 +343,7 @@ class GuardrailTests(unittest.TestCase):
             shutil.copytree(
                 ROOT,
                 copy,
-                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".git"),
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".git", "bin", "obj"),
             )
             (copy / ".cursor" / "hooks" / "stop_tests.py").unlink()
             result = run(["bash", str(copy / "scripts" / "verify-guardrails.sh")], cwd=copy)
@@ -363,6 +363,53 @@ class GuardrailTests(unittest.TestCase):
         result = run(["bash", str(VERIFY)], cwd=ROOT)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(result.stdout.startswith("ALLOW:"))
+
+    def test_stop_default_gate_includes_dotnet_build_and_test(self) -> None:
+        namespace: dict[str, object] = {"__name__": "stop_tests", "__file__": str(STOP)}
+        exec(compile(STOP.read_text(encoding="utf-8"), str(STOP), "exec"), namespace)
+        self.assertEqual(namespace["DOTNET_COMMAND"], "bash scripts/run-dotnet.sh")
+        gate = namespace["gate_commands"]
+        self.assertTrue(callable(gate))
+        self.assertEqual(
+            gate(namespace["DEFAULT_COMMAND"]),
+            ["bash scripts/run-tests.sh", "bash scripts/run-dotnet.sh"],
+        )
+        self.assertEqual(gate("true"), ["true"])
+
+    def test_dotnet_script_fails_closed_when_sdk_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = str(Path(tmp) / "home")
+            empty_path = str(Path(tmp) / "empty-path")
+            os.makedirs(home)
+            os.makedirs(empty_path)
+            result = subprocess.run(
+                ["/usr/bin/bash", str(ROOT / "scripts" / "run-dotnet.sh")],
+                capture_output=True,
+                text=True,
+                cwd=ROOT,
+                env={"PATH": empty_path, "HOME": home, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+        self.assertEqual(result.returncode, 127, result.stdout + result.stderr)
+        self.assertIn("FAIL CLOSED:", result.stdout)
+        self.assertIn("dotnet", result.stdout)
+        self.assertIn("Not passing on a skip.", result.stdout)
+
+    def test_verify_fails_closed_when_directory_build_props_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "repo"
+            shutil.copytree(
+                ROOT,
+                copy,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".git", "bin", "obj"),
+            )
+            (copy / "Directory.Build.props").unlink()
+            result = run(["bash", str(copy / "scripts" / "verify-guardrails.sh")], cwd=copy)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            result.stdout,
+            "FAIL CLOSED: required check 'Directory.Build.props' is missing and cannot run. "
+            "Not passing on a skip.\n",
+        )
 
     def changed_tree(self) -> tuple[Path, str, str]:
         tmp = tempfile.TemporaryDirectory()
