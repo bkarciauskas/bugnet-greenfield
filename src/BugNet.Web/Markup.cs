@@ -98,7 +98,7 @@ internal static class Markup
         {
             body.Append("<tr><td></td><td>")
                 .Append(WebUtility.HtmlEncode(member.UserName))
-                .Append("</td><td>")
+                .Append("</td><td></td><td>")
                 .Append(WebUtility.HtmlEncode(member.Email))
                 .Append("</td><td>");
             if (member.Approved)

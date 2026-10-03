@@ -246,6 +246,7 @@ public sealed class IssueDatabase : IIssueStore
             IsAnonymous = false,
             LastActivityDate = now,
         });
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         db.Memberships.Add(new MembershipRow
         {
             ApplicationId = applicationId,
