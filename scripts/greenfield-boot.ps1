@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Force -Path C:\migrate, C:\migrate\markers, C:\Ema
 function Write-Log([string]$message) {
     $line = (Get-Date).ToUniversalTime().ToString("o") + " " + $message
     Add-Content -Path $log -Value $line
-    & curl.exe -sS -X PUT --upload-file $log "__LOG_PUT__" -o NUL
+    & curl.exe -sS --max-time 30 -X PUT --upload-file $log "__LOG_PUT__" -o NUL
 }
 
 Write-Log "greenfield boot start"
