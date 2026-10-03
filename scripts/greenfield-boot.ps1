@@ -81,20 +81,24 @@ if (-not $sqlcmd) {
     exit 1
 }
 
-$instance = "localhost\SQLEXPRESS"
+$instance = $null
 $probe = $null
-foreach ($try in 1..12) {
-    $probe = Invoke-Sql @("-S", $instance, "-E", "-Q", "SELECT 1", "-b", "-h", "-1", "-l", "5")
-    if ($probe.Code -eq 0) { break }
-    $detail = (($probe.Err + " " + $probe.Out) -replace '\s+', ' ').Trim()
-    if ($detail.Length -gt 300) { $detail = $detail.Substring(0, 300) }
-    Write-Log ("sql express probe " + $try + " exit " + $probe.Code + " " + $detail)
-    Start-Sleep -Seconds 10
+foreach ($candidate in @("lpc:.\SQLEXPRESS", ".\SQLEXPRESS", "localhost\SQLEXPRESS", "lpc:.", "localhost")) {
+    foreach ($try in 1..3) {
+        $probe = Invoke-Sql @("-S", $candidate, "-E", "-Q", "SELECT 1", "-b", "-h", "-1", "-l", "5")
+        if ($probe.Code -eq 0) { $instance = $candidate; break }
+        $detail = (($probe.Err + " " + $probe.Out) -replace '\s+', ' ').Trim()
+        if ($detail.Length -gt 220) { $detail = $detail.Substring(0, 220) }
+        Write-Log ("sql candidate " + $candidate + " try " + $try + " exit " + $probe.Code + " " + $detail)
+        Start-Sleep -Seconds 5
+    }
+    if ($instance) { break }
 }
-if ($probe.Code -ne 0) {
+if (-not $instance) {
     Write-Log "sql express probe failed"
     exit 1
 }
+Write-Log ("sql server " + $instance)
 
 $dbResult = Invoke-Sql @("-S", $instance, "-E", "-Q", "SET NOCOUNT ON; SELECT DB_ID(N'BugNetGreenfield')", "-h", "-1", "-W")
 $db = $dbResult.Out
